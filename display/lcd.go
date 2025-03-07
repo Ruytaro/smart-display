@@ -1,7 +1,7 @@
 package display
 
 import (
-	_ "embed"
+	"fmt"
 	"image"
 	"smart-display/utils"
 	"time"
@@ -10,11 +10,6 @@ import (
 	"github.com/golang/freetype/truetype"
 	"github.com/tarm/serial"
 )
-
-// embed
-//
-//go:embed font.ttf
-var fontData []byte
 
 const (
 	PORTRAIT          = 0
@@ -41,12 +36,17 @@ type Display struct {
 	send   chan []byte
 }
 
-func NewDisplay(portName string, width, height uint16) (*Display, error) {
+var font *truetype.Font
+
+func NewDisplay(portName string, width, height uint16, fontData []byte) (*Display, error) {
 	config := &serial.Config{
 		Name:        portName,
 		Baud:        1152000,
 		ReadTimeout: time.Second * 5,
 	}
+	var err error
+	font, err = truetype.Parse(fontData)
+	utils.Check(err)
 	port, err := serial.OpenPort(config)
 	utils.Check(err)
 	canvas := gg.NewContext(int(width), int(height))
@@ -84,13 +84,12 @@ func (d *Display) Reset() {
 }
 
 func (d *Display) WriteText(text string, color, bg uint16, x, y, size, ax, ay float64) {
-	font, err := truetype.Parse(fontData)
-	utils.Check(err)
-	face := truetype.NewFace(font, &truetype.Options{Size: size})
+
 	d.canvas.SetRGB(utils.RGB565ToComponents(bg))
 	d.canvas.Clear()
 	d.canvas.SetRGB(utils.RGB565ToComponents(color))
 
+	face := truetype.NewFace(font, &truetype.Options{Size: size})
 	d.canvas.SetFontFace(face)
 	d.canvas.DrawStringWrapped(text, x, y, ax, ay, 480, 1.2, gg.AlignLeft)
 }
@@ -118,7 +117,7 @@ func chunked(data []byte, size int) [][]byte {
 func (d *Display) UpdateDisplay() {
 	img := d.canvas.Image()
 	rgb565le := toRGB565LE(img)
-	d.canvas.SavePNG("image.png")
+	d.canvas.SavePNG(fmt.Sprintf("out/%d.png", time.Now().Unix()))
 	d.sendCommand(DISPLAY_BITMAP, 0, 0, d.width-1, d.height-1)
 	for _, chunk := range chunked(rgb565le, int(480*8)) {
 		d.send <- chunk

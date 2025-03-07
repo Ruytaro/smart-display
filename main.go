@@ -1,6 +1,7 @@
 package main
 
 import (
+	_ "embed"
 	"fmt"
 	"log"
 	"smart-display/display"
@@ -15,9 +16,14 @@ const (
 	REVERSE_LANDSCAPE = 3
 )
 
+// embed
+//
+//go:embed resources/font.ttf
+var fontData []byte
+
 func main() {
 	// Create a new display
-	display, err := display.NewDisplay("/dev/ttyACM0", 480, 320)
+	display, err := display.NewDisplay("/dev/ttyACM0", 480, 320, fontData)
 	utils.Check(err)
 	display.SetOrientation(LANDSCAPE)
 	if err != nil {
