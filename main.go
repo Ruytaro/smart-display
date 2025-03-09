@@ -2,8 +2,9 @@ package main
 
 import (
 	_ "embed"
-	"fmt"
+	"image/color"
 	"log"
+	"os"
 	"smart-display/display"
 	"smart-display/utils"
 	"time"
@@ -23,16 +24,34 @@ var fontData []byte
 
 func main() {
 	// Create a new display
-	display, err := display.NewDisplay("/dev/ttyACM0", 480, 320, fontData)
+	wch := make(chan (any))
+	display, err := display.NewDisplay(wch, "/dev/ttyACM0", 480, 320, fontData)
 	utils.Check(err)
-	display.SetOrientation(LANDSCAPE)
+	//display.SetOrientation(LANDSCAPE)
 	if err != nil {
 		log.Fatalf("Failed to load font: %v", err)
 	}
+	display.Demo()
+
+	display.Reset()
+	<-wch
+	os.Exit(0)
+
 	time.Sleep(time.Second)
-	display.WriteText("Hello, World!", 0xFFFF, 0x0000, 0, 0, 16, 0, 0)
-	ts := time.Now()
+	display.Fill(128, 0, 255)
 	display.UpdateDisplay()
-	last := time.Since(ts)
-	fmt.Printf("Time to draw image: %d, %.2f fps\n", last.Milliseconds(), 1000.0/float64(last.Milliseconds()))
+	display.WriteText("Hello, World!", color.White, 0, 0, 16, 0, 0, 0)
+	display.UpdateDisplay()
+	display.WriteText("Hello, World!", color.White, 240, 160, 32, 0.5, 0.5, 1)
+	display.UpdateDisplay()
+	time.Sleep(time.Second)
+	display.WriteText("Hello, World!", color.RGBA{128, 0, 255, 255}, 240, 160, 32, 0.5, 0.5, 1)
+	display.UpdateDisplay()
+	time.Sleep(time.Second)
+	display.WriteText("Bye bye, World!", color.White, 240, 160, 48, 0.5, 0.5, 2)
+	display.UpdateDisplay()
+	time.Sleep(time.Second * 3)
+	display.Fill(128, 0, 255)
+	display.UpdateDisplay()
+	time.Sleep(time.Second)
 }

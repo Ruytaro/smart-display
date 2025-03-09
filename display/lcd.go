@@ -2,7 +2,8 @@ package display
 
 import (
 	"fmt"
-	"image"
+	"image/color"
+	"os"
 	"smart-display/utils"
 	"time"
 
@@ -28,20 +29,28 @@ const (
 	DISPLAY_PIXELS    = 195 //Displays a pixel on the screen
 )
 
+const link = "out/latest.png"
+const chunk_size = 8
+
 type Display struct {
 	port   *serial.Port
 	width  uint16
 	height uint16
 	canvas *gg.Context
 	send   chan []byte
+	last   [][]color.Color
+}
+
+type Chunk struct {
+	cx, cy uint16
 }
 
 var font *truetype.Font
 
-func NewDisplay(portName string, width, height uint16, fontData []byte) (*Display, error) {
+func NewDisplay(cl chan (any), portName string, width, height uint16, fontData []byte) (*Display, error) {
 	config := &serial.Config{
 		Name:        portName,
-		Baud:        1152000,
+		Baud:        9600,
 		ReadTimeout: time.Second * 5,
 	}
 	var err error
@@ -50,23 +59,36 @@ func NewDisplay(portName string, width, height uint16, fontData []byte) (*Displa
 	port, err := serial.OpenPort(config)
 	utils.Check(err)
 	canvas := gg.NewContext(int(width), int(height))
-	utils.Check(err)
-	display := &Display{port, width, height, canvas, make(chan []byte)}
-	go display.senderLoop()
+	err = nil
+	display := &Display{port, width, height, canvas, make(chan []byte), make([][]color.Color, 0)}
+	for range width {
+		h := make([]color.Color, 0)
+		for range height {
+			h = append(h, color.Black)
+		}
+		display.last = append(display.last, h)
+	}
+	go display.senderLoop(cl)
+	display.SetOrientation(LANDSCAPE)
+	display.Fill(32, 0, 0)
 	return display, nil
 
 }
 
-func (d *Display) Fill(r, g, b int) {
+func (d *Display) Fill(r, g, b uint8) {
+	d.canvas.SetColor(color.RGBA{r, g, b, 255})
+	d.canvas.Fill()
+	d.canvas.DrawRectangle(0, 0, float64(d.width), float64(d.height))
 }
 
-func (d *Display) senderLoop() {
-	for {
-		select {
-		case data := <-d.send:
-			d.port.Write(data)
-		}
+func (d *Display) senderLoop(closer chan (any)) {
+	ok := true
+	var data []byte
+	for ok {
+		data, ok = <-d.send
+		d.port.Write(data)
 	}
+	close(closer)
 }
 
 func (d *Display) Clear() {
@@ -81,17 +103,14 @@ func (d *Display) SetBrightness(level uint8) {
 
 func (d *Display) Reset() {
 	d.sendCommand(RESET, 0, 0, 0, 0)
+	close(d.send)
 }
 
-func (d *Display) WriteText(text string, color, bg uint16, x, y, size, ax, ay float64) {
-
-	d.canvas.SetRGB(utils.RGB565ToComponents(bg))
-	d.canvas.Clear()
-	d.canvas.SetRGB(utils.RGB565ToComponents(color))
-
+func (d *Display) WriteText(text string, color color.Color, x, y, size, ax, ay float64, al gg.Align) {
+	d.canvas.SetRGB255(utils.ColorToComponents(color))
 	face := truetype.NewFace(font, &truetype.Options{Size: size})
 	d.canvas.SetFontFace(face)
-	d.canvas.DrawStringWrapped(text, x, y, ax, ay, 480, 1.2, gg.AlignLeft)
+	d.canvas.DrawStringWrapped(text, x, y, ax, ay, 480, 1.2, al)
 }
 
 func (d *Display) sendCommand(cmd byte, x, y, ex, ey uint16) {
@@ -105,48 +124,77 @@ func (d *Display) sendCommand(cmd byte, x, y, ex, ey uint16) {
 	d.send <- buffer
 }
 
-func chunked(data []byte, size int) [][]byte {
-	var chunks [][]byte
-	for i := 0; i <= len(data); i += size {
-		end := min(i+size, len(data))
-		chunks = append(chunks, data[i:end])
-	}
-	return chunks
-}
-
 func (d *Display) UpdateDisplay() {
-	img := d.canvas.Image()
-	rgb565le := toRGB565LE(img)
-	d.canvas.SavePNG(fmt.Sprintf("out/%d.png", time.Now().Unix()))
-	d.sendCommand(DISPLAY_BITMAP, 0, 0, d.width-1, d.height-1)
-	for _, chunk := range chunked(rgb565le, int(480*8)) {
-		d.send <- chunk
-	}
-
+	f := utils.GetOutFile()
+	d.canvas.SavePNG("out/" + f)
+	os.Remove(link)
+	os.Symlink(f, link)
+	t := time.Now()
+	d.chunkedUpdate()
+	fmt.Println("Updated in: ", time.Since(t).Milliseconds())
 }
 
-func toRGB565LE(img image.Image) []byte {
-	bounds := img.Bounds()
-	width := bounds.Dx()
-	height := bounds.Dy()
-	data := make([]byte, width*height*2)
+func (d *Display) chunkedUpdate() {
+	pending := make([]Chunk, 0)
+	for cx := range d.width / chunk_size {
+		for cy := range d.height / chunk_size {
+			chk := Chunk{cx, cy}
+			if d.moddedChunk(chk) {
+				pending = append(pending, chk)
+			}
+		}
+	}
+	fmt.Printf("Updated %d chunks\n", len(pending))
+	for _, chunk := range pending {
+		d.updateChunk(chunk)
+	}
+}
+
+func (d *Display) moddedChunk(chunk Chunk) bool {
+	for x := range chunk_size {
+		for y := range chunk_size {
+			px := x + int(chunk.cx*chunk_size)
+			py := y + int(chunk.cy*chunk_size)
+			if d.canvas.Image().At(px, py) != d.last[px][py] {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (d *Display) updateChunk(chunk Chunk) {
+	cx := chunk.cx * chunk_size
+	cy := chunk.cy * chunk_size
+	d.sendCommand(DISPLAY_BITMAP, cx, cy, cx+chunk_size-1, cy+chunk_size-1)
+	d.send <- d.getChunk(chunk)
+	d.saveChunk(chunk)
+}
+
+func (d *Display) saveChunk(c Chunk) {
+	for y := range chunk_size {
+		py := y + int(c.cy*chunk_size)
+		for x := range chunk_size {
+			px := x + int(c.cx*chunk_size)
+			d.last[px][py] = d.canvas.Image().At(px, py)
+		}
+	}
+}
+
+func (d *Display) getChunk(c Chunk) []byte {
+	data := make([]byte, chunk_size*chunk_size*2)
 	i := 0
-	for y := range height {
-		for x := range width {
-			r, g, b, _ := img.At(x, y).RGBA()
-			data[i] = byte(rgb565(r, g, b) & 0xFF)
-			data[i+1] = byte(rgb565(r, g, b) >> 8)
+	for y := range chunk_size {
+		py := y + int(c.cy*chunk_size)
+		for x := range chunk_size {
+			px := x + int(c.cx*chunk_size)
+			color := d.canvas.Image().At(px, py)
+			data[i] = byte(utils.RGBAToRGB565(color.RGBA()) & 0xFF)
+			data[i+1] = byte(utils.RGBAToRGB565(color.RGBA()) >> 8)
 			i += 2
 		}
 	}
 	return data
-}
-
-func rgb565(r, g, b uint32) uint16 {
-	r5 := uint16((r >> 11) & 0x1F) // 5 bits
-	g6 := uint16((g >> 10) & 0x3F) // 6 bits
-	b5 := uint16((b >> 11) & 0x1F) // 5 bits
-	return (r5 << 11) | (g6 << 5) | b5
 }
 
 func (d *Display) SetOrientation(orientation uint8) {
@@ -164,4 +212,26 @@ func (d *Display) SetOrientation(orientation uint8) {
 	byteBuffer[9] = byte(d.height >> 8)
 	byteBuffer[10] = byte(d.height & 255)
 	d.send <- byteBuffer
+}
+
+func (d *Display) Demo() {
+	d.Fill(255, 128, 0)
+	d.WriteText("Hello, World!", color.Black, 240, 160, 32, 0.5, 0.5, gg.AlignCenter)
+	d.UpdateDisplay()
+	time.Sleep(2 * time.Second)
+	d.Fill(0, 255, 128)
+	d.WriteText("Hello, World!", color.Black, 240, 160, 32, 0.5, 0.5, gg.AlignCenter)
+	d.UpdateDisplay()
+	time.Sleep(2 * time.Second)
+	d.Fill(0, 128, 255)
+	d.WriteText("Hello, World!", color.Black, 240, 160, 32, 0.5, 0.5, gg.AlignCenter)
+	d.UpdateDisplay()
+	time.Sleep(2 * time.Second)
+	d.canvas.NewSubPath()
+	d.canvas.LineTo(0, 0)
+	d.canvas.LineTo(480, 0)
+	d.canvas.LineTo(480, 80)
+	d.canvas.LineTo(0, 80)
+	d.canvas.ClosePath()
+	d.canvas.Fill()
 }
