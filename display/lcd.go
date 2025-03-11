@@ -39,6 +39,7 @@ type Display struct {
 	canvas *gg.Context
 	send   chan []byte
 	last   [][]color.Color
+	debug  bool
 }
 
 type Chunk struct {
@@ -60,7 +61,7 @@ func NewDisplay(cl chan (any), portName string, width, height uint16, fontData [
 	utils.Check(err)
 	canvas := gg.NewContext(int(width), int(height))
 	err = nil
-	display := &Display{port, width, height, canvas, make(chan []byte), make([][]color.Color, 0)}
+	display := &Display{port: port, width: width, height: height, canvas: canvas, send: make(chan []byte), last: make([][]color.Color, 0), debug: false}
 	for range width {
 		h := make([]color.Color, 0)
 		for range height {
@@ -72,7 +73,9 @@ func NewDisplay(cl chan (any), portName string, width, height uint16, fontData [
 	display.SetOrientation(LANDSCAPE)
 	display.Fill(32, 0, 0)
 	return display, nil
-
+}
+func (d *Display) SetDebug(set bool) {
+	d.debug = set
 }
 
 func (d *Display) Fill(r, g, b uint8) {
@@ -125,13 +128,14 @@ func (d *Display) sendCommand(cmd byte, x, y, ex, ey uint16) {
 }
 
 func (d *Display) UpdateDisplay() {
-	f := utils.GetOutFile()
-	d.canvas.SavePNG("out/" + f)
-	os.Remove(link)
-	os.Symlink(f, link)
-	t := time.Now()
-	d.chunkedUpdate()
-	fmt.Println("Updated in: ", time.Since(t).Milliseconds())
+	if d.debug {
+		f := utils.GetOutFile()
+		d.canvas.SavePNG("out/" + f)
+		os.Remove(link)
+		os.Symlink(f, link)
+	} else {
+		d.chunkedUpdate()
+	}
 }
 
 func (d *Display) chunkedUpdate() {
@@ -144,10 +148,10 @@ func (d *Display) chunkedUpdate() {
 			}
 		}
 	}
-	fmt.Printf("Updated %d chunks\n", len(pending))
 	for _, chunk := range pending {
 		d.updateChunk(chunk)
 	}
+	fmt.Printf("Updated %d chunks\n", len(pending))
 }
 
 func (d *Display) moddedChunk(chunk Chunk) bool {
@@ -214,6 +218,20 @@ func (d *Display) SetOrientation(orientation uint8) {
 	d.send <- byteBuffer
 }
 
+func (d *Display) Stats() {
+	vmFree, vmUsed, vmTotal := utils.GetVMStats()
+	d.Fill(0, 0, 0)
+	d.WriteText(fmt.Sprintf("Free: %dMB/%dMB", vmFree, vmTotal), color.White, 0, 0, 20, 0, 0, gg.AlignLeft)
+	d.WriteText(fmt.Sprintf("Used: %.2f%%", vmUsed), color.White, 0, 0, 20, 0, 0, gg.AlignRight)
+	cpus, err := utils.GetCPUUsage()
+	utils.Check(err)
+	colwidth := int(d.width) / len(cpus)
+	for i, v := range cpus {
+		d.canvas.SetRGB255(255, 255, 255)
+		d.canvas.DrawRectangle(float64(d.height)-v*2, float64(i*colwidth), float64(colwidth*(i+1)), float64(d.height))
+	}
+	d.UpdateDisplay()
+}
 func (d *Display) Demo() {
 	d.Fill(255, 128, 0)
 	d.WriteText("Hello, World!", color.Black, 240, 160, 32, 0.5, 0.5, gg.AlignCenter)
@@ -227,11 +245,8 @@ func (d *Display) Demo() {
 	d.WriteText("Hello, World!", color.Black, 240, 160, 32, 0.5, 0.5, gg.AlignCenter)
 	d.UpdateDisplay()
 	time.Sleep(2 * time.Second)
-	d.canvas.NewSubPath()
-	d.canvas.LineTo(0, 0)
-	d.canvas.LineTo(480, 0)
-	d.canvas.LineTo(480, 80)
-	d.canvas.LineTo(0, 80)
-	d.canvas.ClosePath()
-	d.canvas.Fill()
+	d.Fill(0, 128, 255)
+	d.WriteText("Bye, bye!", color.Black, 240, 160, 32, 0.5, 0.5, gg.AlignCenter)
+	d.UpdateDisplay()
+	time.Sleep(2 * time.Second)
 }

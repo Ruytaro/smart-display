@@ -3,7 +3,6 @@ package main
 import (
 	_ "embed"
 	"image/color"
-	"log"
 	"os"
 	"smart-display/display"
 	"smart-display/utils"
@@ -26,15 +25,13 @@ func main() {
 	// Create a new display
 	wch := make(chan (any))
 	display, err := display.NewDisplay(wch, "/dev/ttyACM0", 480, 320, fontData)
+	display.SetDebug(true)
 	utils.Check(err)
 	//display.SetOrientation(LANDSCAPE)
-	if err != nil {
-		log.Fatalf("Failed to load font: %v", err)
-	}
-	display.Demo()
-
-	display.Reset()
-	<-wch
+	display.SetBrightness(25)
+	//display.Demo()
+	display.Stats()
+	time.Sleep(time.Second)
 	os.Exit(0)
 
 	time.Sleep(time.Second)

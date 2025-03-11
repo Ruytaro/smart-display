@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"image/color"
 	"time"
+
+	"github.com/shirou/gopsutil/cpu"
+	"github.com/shirou/gopsutil/mem"
 )
 
 func MapValue(value, inMin, inMax, outMin, outMax float64) float64 {
@@ -48,4 +51,17 @@ func ColorToRGB565(c color.Color) uint16 {
 	g6 := uint16((g >> 10) & 0x3F) // 6 bits
 	b5 := uint16((b >> 11) & 0x1F) // 5 bits
 	return (r5 << 11) | (g6 << 5) | b5
+}
+
+func GetCPUUsage() ([]float64, error) {
+	return cpu.Percent(time.Second, true)
+}
+
+func GetVMStats() (uint64, float64, uint64) {
+	vmstat, err := mem.VirtualMemory()
+	Check(err)
+	mbFree := vmstat.Available / 1024 / 1024
+	mbUsed := float64(vmstat.Used) / float64(vmstat.Total) * 100
+	mbTotal := vmstat.Total / 1024 / 1024
+	return mbFree, mbUsed, mbTotal
 }
