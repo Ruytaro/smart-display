@@ -32,6 +32,7 @@ func main() {
 	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, os.Interrupt)
 	run := true
+	display.Stats()
 	for run {
 		select {
 		case <-ch:

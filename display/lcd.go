@@ -149,11 +149,9 @@ func (d *Display) chunkedUpdate() {
 			}
 		}
 	}
-	ts := time.Now()
 	for _, chunk := range pending {
 		d.updateChunk(chunk)
 	}
-	fmt.Printf("Updated %d chunks in: %d\n", len(pending), time.Since(ts).Milliseconds())
 }
 
 func (d *Display) moddedChunk(chunk Chunk) bool {
@@ -231,7 +229,6 @@ func (d *Display) Stats() {
 		d.canvas.SetFillStyle(grad)
 		d.canvas.Fill()
 		d.WriteText(fmt.Sprintf("%.0f%%", v), color.White, float64(i*colwidth), 100, 20, 0, 0, gg.AlignLeft)
-		//fmt.Println(float64(i*colwidth), py, float64(colwidth), 320-py)
 	}
 	d.UpdateDisplay()
 }
