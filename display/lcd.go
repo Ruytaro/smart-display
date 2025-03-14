@@ -30,7 +30,8 @@ const (
 )
 
 const link = "out/latest.png"
-const chunk_size = 8
+
+const chunk_size uint16 = 8
 
 type Display struct {
 	port   *serial.Port
@@ -80,8 +81,8 @@ func (d *Display) SetDebug(set bool) {
 
 func (d *Display) Fill(r, g, b uint8) {
 	d.canvas.SetColor(color.RGBA{r, g, b, 255})
-	d.canvas.Fill()
 	d.canvas.DrawRectangle(0, 0, float64(d.width), float64(d.height))
+	d.canvas.Fill()
 }
 
 func (d *Display) senderLoop(closer chan (any)) {
@@ -158,8 +159,8 @@ func (d *Display) chunkedUpdate() {
 func (d *Display) moddedChunk(chunk Chunk) bool {
 	for x := range chunk_size {
 		for y := range chunk_size {
-			px := x + int(chunk.cx*chunk_size)
-			py := y + int(chunk.cy*chunk_size)
+			px := int(x + chunk.cx*chunk_size)
+			py := int(y + chunk.cy*chunk_size)
 			if d.canvas.Image().At(px, py) != d.last[px][py] {
 				return true
 			}
@@ -173,29 +174,19 @@ func (d *Display) updateChunk(chunk Chunk) {
 	cy := chunk.cy * chunk_size
 	d.sendCommand(DISPLAY_BITMAP, cx, cy, cx+chunk_size-1, cy+chunk_size-1)
 	d.send <- d.getChunk(chunk)
-	d.saveChunk(chunk)
-}
-
-func (d *Display) saveChunk(c Chunk) {
-	for y := range chunk_size {
-		py := y + int(c.cy*chunk_size)
-		for x := range chunk_size {
-			px := x + int(c.cx*chunk_size)
-			d.last[px][py] = d.canvas.Image().At(px, py)
-		}
-	}
 }
 
 func (d *Display) getChunk(c Chunk) []byte {
 	data := make([]byte, chunk_size*chunk_size*2)
 	i := 0
 	for y := range chunk_size {
-		py := y + int(c.cy*chunk_size)
+		py := int(y + c.cy*chunk_size)
 		for x := range chunk_size {
-			px := x + int(c.cx*chunk_size)
+			px := int(x + c.cx*chunk_size)
 			color := d.canvas.Image().At(px, py)
 			data[i] = byte(utils.RGBAToRGB565(color.RGBA()) & 0xFF)
 			data[i+1] = byte(utils.RGBAToRGB565(color.RGBA()) >> 8)
+			d.last[px][py] = d.canvas.Image().At(px, py)
 			i += 2
 		}
 	}
@@ -227,7 +218,6 @@ func (d *Display) Stats() {
 	cpus, err := utils.GetCPUUsage()
 	utils.Check(err)
 	colwidth := int(d.width) / len(cpus)
-	d.UpdateDisplay()
 	grad := gg.NewLinearGradient(0, 320, 0, 120)
 	grad.AddColorStop(0, color.RGBA{0, 255, 0, 255})
 	grad.AddColorStop(0.9, color.RGBA{255, 0, 0, 255})
@@ -241,9 +231,7 @@ func (d *Display) Stats() {
 		d.canvas.SetFillStyle(grad)
 		d.canvas.Fill()
 		d.WriteText(fmt.Sprintf("%.0f%%", v), color.White, float64(i*colwidth), 100, 20, 0, 0, gg.AlignLeft)
-		d.UpdateDisplay()
-		fmt.Println(float64(i*colwidth), py, float64(colwidth), 320-py)
-		//d.canvas.Fill()
+		//fmt.Println(float64(i*colwidth), py, float64(colwidth), 320-py)
 	}
 	d.UpdateDisplay()
 }

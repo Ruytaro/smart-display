@@ -2,7 +2,8 @@ package main
 
 import (
 	_ "embed"
-	"image/color"
+	"os"
+	"os/signal"
 	"smart-display/display"
 	"smart-display/utils"
 	"time"
@@ -28,24 +29,20 @@ func main() {
 	utils.Check(err)
 	//display.SetOrientation(LANDSCAPE)
 	display.SetBrightness(25)
+	display.Demo()
+	tc := time.NewTicker(time.Second)
+	ch := make(chan os.Signal, 1)
+	signal.Notify(ch, os.Interrupt)
+	run := true
 	//display.Demo()
-	display.Stats()
-	time.Sleep(time.Second)
-	return
-	display.Fill(128, 0, 255)
-	display.UpdateDisplay()
-	display.WriteText("Hello, World!", color.White, 0, 0, 16, 0, 0, 0)
-	display.UpdateDisplay()
-	display.WriteText("Hello, World!", color.White, 240, 160, 32, 0.5, 0.5, 1)
-	display.UpdateDisplay()
-	time.Sleep(time.Second)
-	display.Fill(128, 0, 255)
-	display.UpdateDisplay()
-	time.Sleep(time.Second)
-	display.WriteText("Bye bye, World!", color.White, 240, 160, 48, 0.5, 0.5, 2)
-	display.UpdateDisplay()
-	time.Sleep(time.Second * 3)
-	display.Fill(128, 0, 255)
-	display.UpdateDisplay()
-	time.Sleep(time.Second)
+	for run {
+		select {
+		case <-ch:
+			run = false
+		case <-tc.C:
+			display.Stats()
+		}
+	}
+	display.Reset()
+	<-wch
 }
