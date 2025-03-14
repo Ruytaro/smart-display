@@ -54,7 +54,7 @@ func ColorToRGB565(c color.Color) uint16 {
 }
 
 func GetCPUUsage() ([]float64, error) {
-	return cpu.Percent(time.Second, true)
+	return cpu.Percent(0, true)
 }
 
 func GetVMStats() (uint64, float64, uint64) {

@@ -27,14 +27,11 @@ func main() {
 	display, err := display.NewDisplay(wch, "/dev/ttyACM0", 480, 320, fontData)
 	//display.SetDebug(true)
 	utils.Check(err)
-	//display.SetOrientation(LANDSCAPE)
-	display.SetBrightness(25)
-	display.Demo()
-	tc := time.NewTicker(time.Second)
+	display.SetBrightness(15)
+	tc := time.NewTicker(time.Second * 5)
 	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, os.Interrupt)
 	run := true
-	//display.Demo()
 	for run {
 		select {
 		case <-ch:

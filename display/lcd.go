@@ -248,8 +248,4 @@ func (d *Display) Demo() {
 	d.WriteText("Hello, World!", color.Black, 240, 160, 32, 0.5, 0.5, gg.AlignCenter)
 	d.UpdateDisplay()
 	time.Sleep(2 * time.Second)
-	d.Fill(0, 128, 255)
-	d.WriteText("Bye, bye!", color.Black, 240, 160, 32, 0.5, 0.5, gg.AlignCenter)
-	d.UpdateDisplay()
-	time.Sleep(2 * time.Second)
 }
