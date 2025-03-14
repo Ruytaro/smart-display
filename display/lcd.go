@@ -148,10 +148,11 @@ func (d *Display) chunkedUpdate() {
 			}
 		}
 	}
+	ts := time.Now()
 	for _, chunk := range pending {
 		d.updateChunk(chunk)
 	}
-	fmt.Printf("Updated %d chunks\n", len(pending))
+	fmt.Printf("Updated %d chunks in: %d\n", len(pending), time.Since(ts).Milliseconds())
 }
 
 func (d *Display) moddedChunk(chunk Chunk) bool {
@@ -226,9 +227,23 @@ func (d *Display) Stats() {
 	cpus, err := utils.GetCPUUsage()
 	utils.Check(err)
 	colwidth := int(d.width) / len(cpus)
+	d.UpdateDisplay()
+	grad := gg.NewLinearGradient(0, 320, 0, 120)
+	grad.AddColorStop(0, color.RGBA{0, 255, 0, 255})
+	grad.AddColorStop(0.9, color.RGBA{255, 0, 0, 255})
+	grad.AddColorStop(1, color.RGBA{0, 0, 0, 255})
+	grad.AddColorStop(0.5, color.RGBA{255, 255, 0, 255})
 	for i, v := range cpus {
-		d.canvas.SetRGB255(255, 255, 255)
-		d.canvas.DrawRectangle(float64(d.height)-v*2, float64(i*colwidth), float64(colwidth*(i+1)), float64(d.height))
+		py := utils.MapValue(v, 0, 100, 320, 120)
+		d.canvas.DrawRectangle(0, 0, 480, 320)
+		d.canvas.Clip()
+		d.canvas.DrawRectangle(float64(i*colwidth), py, float64(colwidth), 320-py)
+		d.canvas.SetFillStyle(grad)
+		d.canvas.Fill()
+		d.WriteText(fmt.Sprintf("%.0f%%", v), color.White, float64(i*colwidth), 100, 20, 0, 0, gg.AlignLeft)
+		d.UpdateDisplay()
+		fmt.Println(float64(i*colwidth), py, float64(colwidth), 320-py)
+		//d.canvas.Fill()
 	}
 	d.UpdateDisplay()
 }
