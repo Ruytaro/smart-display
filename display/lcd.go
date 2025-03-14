@@ -227,7 +227,7 @@ func (d *Display) Stats() {
 		py := utils.MapValue(v, 0, 100, 320, 120)
 		d.canvas.DrawRectangle(0, 0, 480, 320)
 		d.canvas.Clip()
-		d.canvas.DrawRectangle(float64(i*colwidth), py, float64(colwidth), 320-py)
+		d.canvas.DrawRectangle(float64(i*colwidth)-1, py, float64(colwidth)-2, 320-py)
 		d.canvas.SetFillStyle(grad)
 		d.canvas.Fill()
 		d.WriteText(fmt.Sprintf("%.0f%%", v), color.White, float64(i*colwidth), 100, 20, 0, 0, gg.AlignLeft)
