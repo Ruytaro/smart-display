@@ -14,3 +14,7 @@ Looking at the internet, there are some great open source re-implemenations of t
 - ```-d``` enables "debug mode" in which writes to a png instead
 - ```-path / -path /tmp/``` monitors the space usage on the desired paths (up to 5 paths)
 - ```-rate 2``` sets the time in seconds between updates (by default is 5s)
+
+## Demo screen
+
+![demo screen](https://github.com/Ruytaro/smart-display/blob/main/resources/demoScreen.png)
