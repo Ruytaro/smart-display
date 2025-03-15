@@ -1,9 +1,9 @@
 package utils
 
 import (
-	"fmt"
 	"image/color"
-	"time"
+	"log"
+	"syscall"
 
 	"github.com/shirou/gopsutil/cpu"
 	"github.com/shirou/gopsutil/mem"
@@ -15,7 +15,7 @@ func MapValue(value, inMin, inMax, outMin, outMax float64) float64 {
 
 func Check(err error) {
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 }
 
@@ -27,15 +27,11 @@ func RGB565ToComponents(color uint16) (r, g, b uint8) {
 }
 
 func ColorToComponents(color color.Color) (r, g, b int) {
-	cr, cb, cg, _ := color.RGBA()
+	cr, cg, cb, _ := color.RGBA()
 	r = int(cr >> 8)
 	g = int(cg >> 8)
 	b = int(cb >> 8)
 	return r, g, b
-}
-
-func GetOutFile() string {
-	return fmt.Sprintf("%d.png", time.Now().Unix())
 }
 
 func RGBAToRGB565(r, g, b, _ uint32) uint16 {
@@ -53,15 +49,30 @@ func ColorToRGB565(c color.Color) uint16 {
 	return (r5 << 11) | (g6 << 5) | b5
 }
 
-func GetCPUUsage() ([]float64, error) {
+func RGBAtoColor(r, g, b, a uint8) color.Color {
+	return color.RGBA{r, g, b, a}
+}
+
+func CPUStats() ([]float64, error) {
 	return cpu.Percent(0, true)
 }
 
-func GetVMStats() (uint64, float64, uint64) {
+func VMStats() (float64, float64, float64) {
 	vmstat, err := mem.VirtualMemory()
 	Check(err)
-	mbFree := vmstat.Available / 1024 / 1024
+	mbFree := float64(vmstat.Available) / 1e6
 	mbUsed := float64(vmstat.Used) / float64(vmstat.Total) * 100
-	mbTotal := vmstat.Total / 1024 / 1024
+	mbTotal := float64(vmstat.Total) / 1e6
 	return mbFree, mbUsed, mbTotal
+}
+func PathStats(path string) (float64, float64) {
+	var stat syscall.Statfs_t
+	err := syscall.Statfs(path, &stat)
+	Check(err)
+
+	total := float64(stat.Blocks * uint64(stat.Bsize))
+	free := float64(stat.Bfree * uint64(stat.Bsize))
+	percentage := total / free
+	free /= 1e6
+	return free, percentage
 }

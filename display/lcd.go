@@ -3,7 +3,6 @@ package display
 import (
 	"fmt"
 	"image/color"
-	"os"
 	"smart-display/utils"
 	"time"
 
@@ -49,20 +48,23 @@ type Chunk struct {
 
 var font *truetype.Font
 
-func NewDisplay(cl chan (any), portName string, width, height uint16, fontData []byte) (*Display, error) {
-	config := &serial.Config{
-		Name:        portName,
-		Baud:        9600,
-		ReadTimeout: time.Second * 5,
-	}
+func NewDisplay(cl chan (any), portName string, width, height uint16, fontData []byte, debug bool) (*Display, error) {
+	var port *serial.Port
 	var err error
+	if !debug {
+		config := &serial.Config{
+			Name:        portName,
+			Baud:        9600,
+			ReadTimeout: time.Second * 5,
+		}
+		port, err = serial.OpenPort(config)
+		utils.Check(err)
+	}
 	font, err = truetype.Parse(fontData)
-	utils.Check(err)
-	port, err := serial.OpenPort(config)
 	utils.Check(err)
 	canvas := gg.NewContext(int(width), int(height))
 	err = nil
-	display := &Display{port: port, width: width, height: height, canvas: canvas, send: make(chan []byte), last: make([][]color.Color, 0), debug: false}
+	display := &Display{port: port, width: width, height: height, canvas: canvas, send: make(chan []byte), last: make([][]color.Color, 0), debug: debug}
 	for range width {
 		h := make([]color.Color, 0)
 		for range height {
@@ -70,13 +72,10 @@ func NewDisplay(cl chan (any), portName string, width, height uint16, fontData [
 		}
 		display.last = append(display.last, h)
 	}
-	go display.senderLoop(cl)
+	go display.senderLoop(cl, debug)
 	display.SetOrientation(LANDSCAPE)
 	display.Fill(32, 0, 0)
 	return display, nil
-}
-func (d *Display) SetDebug(set bool) {
-	d.debug = set
 }
 
 func (d *Display) Fill(r, g, b uint8) {
@@ -85,19 +84,17 @@ func (d *Display) Fill(r, g, b uint8) {
 	d.canvas.Fill()
 }
 
-func (d *Display) senderLoop(closer chan (any)) {
+func (d *Display) senderLoop(closer chan (any), debug bool) {
 	ok := true
 	var data []byte
 	for ok {
 		data, ok = <-d.send
+		if debug {
+			continue
+		}
 		d.port.Write(data)
 	}
 	close(closer)
-}
-
-func (d *Display) Clear() {
-	d.SetOrientation(PORTRAIT)
-	d.sendCommand(CLEAR, 0, 0, 0, 0)
 }
 
 func (d *Display) SetBrightness(level uint8) {
@@ -110,11 +107,11 @@ func (d *Display) Reset() {
 	close(d.send)
 }
 
-func (d *Display) WriteText(text string, color color.Color, x, y, size, ax, ay float64, al gg.Align) {
+func (d *Display) WriteText(text string, color color.Color, x, y, size, ax, ay, width float64, al gg.Align) {
 	d.canvas.SetRGB255(utils.ColorToComponents(color))
 	face := truetype.NewFace(font, &truetype.Options{Size: size})
 	d.canvas.SetFontFace(face)
-	d.canvas.DrawStringWrapped(text, x, y, ax, ay, 480, 1.2, al)
+	d.canvas.DrawStringWrapped(text, x, y, ax, ay, width, 1.2, al)
 }
 
 func (d *Display) sendCommand(cmd byte, x, y, ex, ey uint16) {
@@ -128,12 +125,9 @@ func (d *Display) sendCommand(cmd byte, x, y, ex, ey uint16) {
 	d.send <- buffer
 }
 
-func (d *Display) UpdateDisplay() {
+func (d *Display) Update() {
 	if d.debug {
-		f := utils.GetOutFile()
-		d.canvas.SavePNG("out/" + f)
-		os.Remove(link)
-		os.Symlink(f, link)
+		d.canvas.SavePNG(link)
 	} else {
 		d.chunkedUpdate()
 	}
@@ -208,18 +202,36 @@ func (d *Display) SetOrientation(orientation uint8) {
 	d.send <- byteBuffer
 }
 
-func (d *Display) Stats() {
-	vmFree, vmUsed, vmTotal := utils.GetVMStats()
+func (d *Display) Stats(paths []string) {
+	vmFree, vmUsed, vmTotal := utils.VMStats()
 	d.Fill(0, 0, 0)
-	d.WriteText(fmt.Sprintf("Free: %dMB/%dMB", vmFree, vmTotal), color.White, 0, 0, 20, 0, 0, gg.AlignLeft)
-	d.WriteText(fmt.Sprintf("Used: %.2f%%", vmUsed), color.White, 0, 0, 20, 0, 0, gg.AlignRight)
-	cpus, err := utils.GetCPUUsage()
+	red := uint8(utils.MapValue(vmUsed, 0, 100, 0, 0xFF))
+	col := utils.RGBAtoColor(red, 0xFF-red, 0, 0xFF)
+	d.WriteText(fmt.Sprintf("MemFree: %.0fMB/%.0fMB", vmFree, vmTotal), color.White, 0, 0, 16, 0, 0, float64(d.width), gg.AlignLeft)
+	d.WriteText(fmt.Sprintf("Used: %.2f%%", vmUsed), col, 0, 0, 16, 0, 0, float64(d.width), gg.AlignRight)
+	for i, path := range paths {
+		if i > 4 {
+			break
+		}
+		tf, pf := utils.PathStats(path)
+		red := uint8(utils.MapValue(pf, 0, 100, 0, 0xFF))
+		color := utils.RGBAtoColor(red, 0xFF-red, 0, 0xFF)
+		unit := "MB"
+		if tf > 1e4 {
+			tf /= 1e3
+			unit = "GB"
+		}
+		h := float64(i+1) * 20
+		d.WriteText(fmt.Sprintf("%s  %.0f%% -> %.0f%s", path, pf, tf, unit), color, 0, h, 16, 0, 0, float64(d.width), gg.AlignLeft)
+
+	}
+	cpus, err := utils.CPUStats()
 	utils.Check(err)
 	colwidth := int(d.width) / len(cpus)
 	grad := gg.NewLinearGradient(0, 320, 0, 120)
 	grad.AddColorStop(0, color.RGBA{0, 255, 0, 255})
-	grad.AddColorStop(0.9, color.RGBA{255, 0, 0, 255})
-	grad.AddColorStop(1, color.RGBA{0, 0, 0, 255})
+	grad.AddColorStop(1, color.RGBA{255, 0, 0, 255})
+	//	grad.AddColorStop(1, color.RGBA{0, 0, 0, 255})
 	grad.AddColorStop(0.5, color.RGBA{255, 255, 0, 255})
 	for i, v := range cpus {
 		py := utils.MapValue(v, 0, 100, 320, 120)
@@ -228,21 +240,21 @@ func (d *Display) Stats() {
 		d.canvas.DrawRectangle(float64(i*colwidth)-1, py, float64(colwidth)-2, 320-py)
 		d.canvas.SetFillStyle(grad)
 		d.canvas.Fill()
-		d.WriteText(fmt.Sprintf("%.0f%%", v), color.White, float64(i*colwidth), 100, 20, 0, 0, gg.AlignLeft)
+		d.WriteText(fmt.Sprintf("%.0f%%", v), color.White, float64(i*colwidth), 120, 16, 0, 0, float64(colwidth), gg.AlignCenter)
 	}
-	d.UpdateDisplay()
+	d.Update()
 }
 func (d *Display) Demo() {
 	d.Fill(255, 128, 0)
-	d.WriteText("Hello, World!", color.Black, 240, 160, 32, 0.5, 0.5, gg.AlignCenter)
-	d.UpdateDisplay()
+	d.WriteText("Hello, World!", color.Black, 240, 160, 32, 0.5, 0.5, float64(d.width), gg.AlignCenter)
+	d.Update()
 	time.Sleep(2 * time.Second)
 	d.Fill(0, 255, 128)
-	d.WriteText("Hello, World!", color.Black, 240, 160, 32, 0.5, 0.5, gg.AlignCenter)
-	d.UpdateDisplay()
+	d.WriteText("Hello, World!", color.Black, 240, 160, 32, 0.5, 0.5, float64(d.width), gg.AlignCenter)
+	d.Update()
 	time.Sleep(2 * time.Second)
 	d.Fill(0, 128, 255)
-	d.WriteText("Hello, World!", color.Black, 240, 160, 32, 0.5, 0.5, gg.AlignCenter)
-	d.UpdateDisplay()
+	d.WriteText("Hello, World!", color.Black, 240, 160, 32, 0.5, 0.5, float64(d.width), gg.AlignCenter)
+	d.Update()
 	time.Sleep(2 * time.Second)
 }
