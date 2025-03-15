@@ -30,7 +30,7 @@ const (
 
 const link = "out/latest.png"
 
-const chunk_size uint16 = 8
+const chunk_size uint16 = 16
 
 type Display struct {
 	port   *serial.Port
@@ -223,7 +223,6 @@ func (d *Display) Stats(paths []string) {
 		}
 		h := float64(i+1) * 20
 		d.WriteText(fmt.Sprintf("%s  %.0f%% -> %.0f%s", path, pf, tf, unit), color, 0, h, 16, 0, 0, float64(d.width), gg.AlignLeft)
-
 	}
 	cpus, err := utils.CPUStats()
 	utils.Check(err)
@@ -257,4 +256,20 @@ func (d *Display) Demo() {
 	d.WriteText("Hello, World!", color.Black, 240, 160, 32, 0.5, 0.5, float64(d.width), gg.AlignCenter)
 	d.Update()
 	time.Sleep(2 * time.Second)
+	d.Fill(0, 0, 0)
+	d.Update()
+	i := 0
+	d.canvas.SetColor(color.White)
+	for cx := range d.width / chunk_size {
+		for cy := range d.height / chunk_size {
+			i++
+			if i%2 == 0 {
+				d.canvas.DrawRectangle(float64(cx*chunk_size), float64(cy*chunk_size), float64(chunk_size), float64(chunk_size))
+				d.canvas.Fill()
+				d.Update()
+			}
+		}
+		i++
+	}
+	time.Sleep(time.Second)
 }
